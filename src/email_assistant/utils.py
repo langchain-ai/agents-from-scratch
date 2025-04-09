@@ -1,5 +1,9 @@
 from langchain_core.messages import convert_to_openai_messages
-from langgraph.graph import MessagesState
+from langgraph.prebuilt.interrupt import HumanInterruptConfig
+from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as create_tool
+from langgraph.types import interrupt
+from langchain_core.runnables import RunnableConfig
 import json
 
 def format_messages(messages):
@@ -173,3 +177,59 @@ Correct Classification: {correct_routing}
         formatted.append(formatted_example)
     
     return "\n".join(formatted)
+
+def _get_tool_input_display_kwargs(tool_input, tool_call_schema):
+    if isinstance(tool_call_schema, dict):
+        allowed_keys = tool_call_schema["properties"]
+    else:
+        allowed_keys = tool_call_schema.model_json_schema()["properties"]
+
+    return {key: tool_input[key] for key in allowed_keys}
+
+def tool_with_human_in_the_loop(
+    tool,
+    *,
+    tool_name: str = None,
+    interrupt_config: HumanInterruptConfig,
+    interrupt_description: str = None
+):
+    if not isinstance(tool, BaseTool):
+        tool = create_tool(tool)
+
+    if tool_name is None:
+        tool_name = tool.name
+
+    # propagate more kwargs here, if needed
+    @create_tool(tool_name, description=tool.description, args_schema=tool.args_schema, infer_schema=False)
+    def call_tool_with_interrupt(config: RunnableConfig, **kwargs):
+        tool_input = kwargs
+        request = {
+            "action_request": {
+                "action": tool.name,
+                "args": _get_tool_input_display_kwargs(tool_input, tool.tool_call_schema)
+            },
+            "config": interrupt_config,
+        }
+        if interrupt_description:
+            request["description"] = interrupt_description
+
+        response = interrupt([request])
+        if response["type"] == "accept":
+            # we can call the tool as is!
+            tool_response = tool.invoke(tool_input, config)
+        elif response["type"] == "edit":
+            tool_input = response["args"]["args"]
+            # can optionally update AI message to include updated tool call
+            # to avoid confusing the LLM. this would just mean returning a Command
+            # with state update
+            tool_response = tool.invoke(tool_input, config)
+        elif response["type"] == "response":
+            user_feedback = response["args"]
+            tool_response = user_feedback
+        elif response["type"] == "ignore":
+            # can make this customizable
+            tool_response = "Tool execution cancelled"
+
+        return tool_response
+
+    return call_tool_with_interrupt

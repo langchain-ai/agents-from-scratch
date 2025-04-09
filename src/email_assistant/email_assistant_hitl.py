@@ -6,12 +6,13 @@ from langchain_core.tools import tool
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt, Command
+from langgraph.prebuilt.interrupt import HumanInterruptConfig
 
 from email_assistant.prompts import triage_system_prompt, triage_user_prompt, agent_system_prompt_hitl, default_background, default_triage_instructions, default_response_preferences, default_cal_preferences
 from email_assistant.schemas import State, RouterSchema, StateInput
-from email_assistant.utils import parse_email, format_for_display, format_email_markdown
+from email_assistant.utils import parse_email, format_for_display, format_email_markdown, tool_with_human_in_the_loop
 
-# Agent tools 
+# Define base agent tools
 @tool
 def write_email(to: str, subject: str, content: str) -> str:
     """Write and send an email."""
@@ -36,13 +37,51 @@ def check_calendar_availability(day: str) -> str:
 class Question(BaseModel):
       """Question to ask user."""
       content: str
+
+# Define interrupt configs for each tool
+write_email_interrupt_config = {
+    "allow_ignore": True,
+    "allow_respond": True,
+    "allow_edit": True,
+    "allow_accept": True,
+}
+
+schedule_meeting_interrupt_config = {
+    "allow_ignore": True,
+    "allow_respond": True,
+    "allow_edit": True,
+    "allow_accept": True,
+}
+
+question_interrupt_config = {
+    "allow_ignore": True,
+    "allow_respond": True,
+    "allow_edit": False,
+    "allow_accept": False,
+}
+
+# Wrap tools with human-in-the-loop functionality
+write_email_hitl = tool_with_human_in_the_loop(
+    write_email,
+    interrupt_config=write_email_interrupt_config
+)
+
+schedule_meeting_hitl = tool_with_human_in_the_loop(
+    schedule_meeting,
+    interrupt_config=schedule_meeting_interrupt_config
+)
+
+question_hitl = tool_with_human_in_the_loop(
+    Question,
+    interrupt_config=question_interrupt_config
+)
     
 # All tools available to the agent
 tools = [
-    write_email, 
-    schedule_meeting, 
+    write_email_hitl, 
+    schedule_meeting_hitl, 
     check_calendar_availability, 
-    Question, 
+    question_hitl, 
 ]
 
 tools_by_name = {tool.name: tool for tool in tools}
@@ -146,24 +185,26 @@ def triage_interrupt_handler(state: State) -> Command[Literal["response_agent", 
     messages = [{"role": "user",
                 "content": f"Classification Decision: {state['classification_decision']} for email: {email_markdown}"
                 }]
+    
+    # Define interrupt config for triage
+    triage_interrupt_config = {
+        "allow_ignore": True,  
+        "allow_respond": True, 
+        "allow_edit": False, 
+        "allow_accept": False,  
+    }
 
-    # Create interrupt for Agent Inbox
+    # Create interrupt for Agent Inbox using the same pattern as tool interrupts
     request = {
         "action_request": {
             "action": f"Email Assistant: {state['classification_decision']}",
             "args": {}
         },
-        "config": {
-            "allow_ignore": True,  
-            "allow_respond": True, # Allow user feedback if decision is not correct 
-            "allow_edit": False, 
-            "allow_accept": False,  
-        },
-        # Email to show in Agent Inbox
+        "config": triage_interrupt_config,
         "description": email_markdown,
     }
 
-    # Agent Inbox responds with a list  
+    # Send to Agent Inbox and wait for response
     response = interrupt([request])[0]
 
     # Accept the decision and end   
@@ -204,26 +245,17 @@ def llm_call(state: State):
     }
 
 def interrupt_handler(state: State):
-    """Creates an interrupt for human review of tool calls"""
+    """Process tool calls with human-in-the-loop interrupts handled by the wrapped tools"""
     
     # Store messages
     result = []
 
     # Iterate over the tool calls in the last message
     for tool_call in state["messages"][-1].tool_calls:
+        # Get the tool by name
+        tool = tools_by_name[tool_call["name"]]
         
-        # TODO (discuss w/ Vadym): FIND BETTER WAY TO HANDLE THIS
-        hitl_tools = ["write_email", "schedule_meeting", "Question"]
-        
-        # If tool is not in our HITL list, execute it directly without interruption
-        if tool_call["name"] not in hitl_tools:
-            # Execute search_memory and other tools without interruption
-            tool = tools_by_name[tool_call["name"]]
-            observation = tool.invoke(tool_call["args"])
-            result.append({"role": "tool", "content": observation, "tool_call_id": tool_call["id"]})
-            continue
-            
-        # Get original email from email_input in state
+        # Get original email from email_input in state - for description enhancement
         original_email_markdown = ""
         if "email_input" in state:
             email_input = state["email_input"]
@@ -231,106 +263,14 @@ def interrupt_handler(state: State):
             original_email_markdown = format_email_markdown(subject, author, to, email_thread)
         
         # Format tool call for display and prepend the original email
+        # This will be added as context to tools that need interrupt_description
         tool_display = format_for_display(state, tool_call)
         description = original_email_markdown + tool_display
-
-        # Configure what actions are allowed in Agent Inbox
-        if tool_call["name"] == "write_email":
-            config = {
-                "allow_ignore": True,
-                "allow_respond": True,
-                "allow_edit": True,
-                "allow_accept": True,
-            }
-        elif tool_call["name"] == "schedule_meeting":
-            config = {
-                "allow_ignore": True,
-                "allow_respond": True,
-                "allow_edit": True,
-                "allow_accept": True,
-            }
-        elif tool_call["name"] == "Question":
-            config = {
-                "allow_ignore": True,
-                "allow_respond": True,
-                "allow_edit": False,
-                "allow_accept": False,
-            }
-
-        # Create the interrupt request
-        request = {
-            "action_request": {
-                "action": tool_call["name"],
-                "args": tool_call["args"]
-            },
-            "config": config,
-            "description": description,
-        }
-
-        # Send to Agent Inbox and wait for response
-        response = interrupt([request])[0]
-
-        # Handle the responses 
-        if response["type"] == "accept":
-
-            # Execute the tool with original args
-            tool = tools_by_name[tool_call["name"]]
-            observation = tool.invoke(tool_call["args"])
-            result.append({"role": "tool", "content": observation, "tool_call_id": tool_call["id"]})
-                        
-        elif response["type"] == "edit":
-
-            # Tool selection 
-            tool = tools_by_name[tool_call["name"]]
-            
-            # Get edited args from Agent Inbox
-            edited_args = response["args"]["args"]
-
-            # Save feedback in memory and update the write_email tool call with the edited content from Agent Inbox
-            if tool_call["name"] == "write_email":
-                
-                # TODO (discuss w/ Vadym): FIND BETTER WAY TO HANDLE THIS 
-                # Update the AI message's tool call with edited content (reference to the message in the state)
-                ai_message = state["messages"][-1]
-                current_id = tool_call["id"]
-                
-                # Replace the original tool call with the edited one (any changes made to this reference affect the original object in the state)
-                ai_message.tool_calls = [tc for tc in ai_message.tool_calls if tc["id"] != current_id] + [
-                    {"type": "tool_call", "name": tool_call["name"], "args": edited_args, "id": current_id}
-                ]
-                
-                # Execute the tool with edited args
-                observation = tool.invoke(edited_args)
-                
-                # Add only the tool response message
-                result.append({"role": "tool", "content": observation, "tool_call_id": current_id})
-            
-            # Save feedback in memory and update the schedule_meeting tool call with the edited content from Agent Inbox
-            elif tool_call["name"] == "schedule_meeting":
-                
-                # Update the AI message's tool call with edited content
-                ai_message = state["messages"][-1]
-                current_id = tool_call["id"]
-                
-                # Replace the original tool call with the edited one
-                ai_message.tool_calls = [tc for tc in ai_message.tool_calls if tc["id"] != current_id] + [
-                    {"type": "tool_call", "name": tool_call["name"], "args": edited_args, "id": current_id}
-                ]
-                
-                # Execute the tool with edited args
-                observation = tool.invoke(edited_args)
-                
-                # Add only the tool response message
-                result.append({"role": "tool", "content": observation, "tool_call_id": current_id})
-
-        elif response["type"] == "ignore":
-            # Don't execute the tool
-            result.append({"role": "tool", "content": "Tool execution cancelled by user", "tool_call_id": tool_call["id"]})
-            
-        elif response["type"] == "response":
-            # User provided feedback
-            user_feedback = response["args"]
-            result.append({"role": "tool", "content": f"Feedback: {user_feedback}", "tool_call_id": tool_call["id"]})
+        
+        # Execute the tool with the description as context
+        # All interrupt handling is now handled by the wrapped tool itself
+        observation = tool.invoke(tool_call["args"], config={"interrupt_description": description})
+        result.append({"role": "tool", "content": observation, "tool_call_id": tool_call["id"]})
             
     return {"messages": result}
 
