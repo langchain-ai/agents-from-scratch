@@ -3,13 +3,23 @@ import io
 import sys
 import json
 
-def format_email_markdown(subject, author, to, email_thread):
-    """Format email details into a nicely formatted markdown string for display"""
+def format_email_markdown(subject, author, to, email_thread, email_id=None):
+    """Format email details into a nicely formatted markdown string for display
+    
+    Args:
+        subject: Email subject
+        author: Email sender
+        to: Email recipient
+        email_thread: Email content
+        email_id: Optional email ID (for Gmail API)
+    """
+    id_section = f"\n**ID**: {email_id}" if email_id else ""
+    
     return f"""
 
 **Subject**: {subject}
 **From**: {author}
-**To**: {to}
+**To**: {to}{id_section}
 
 {email_thread}
 
@@ -62,7 +72,7 @@ Arguments:"""
             display += f"\n{tool_call['args']}\n"
     return display
 
-def parse_email(email_input: dict) -> tuple[str, str, str, str]:
+def parse_email(email_input: dict) -> tuple[str, str, str, str, str]:
     """Parse an email input dictionary, supporting multiple schemas.
 
     Supports multiple schema formats:
@@ -77,6 +87,7 @@ def parse_email(email_input: dict) -> tuple[str, str, str, str]:
                 - to: Recipient's name and email
                 - subject: Email subject line
                 - email_thread: Full email content
+                - id: Optional email ID
             Gmail schema:
                 - from_email: Sender's email
                 - to_email: Recipient's email
@@ -90,13 +101,15 @@ def parse_email(email_input: dict) -> tuple[str, str, str, str]:
                 - to: Recipient's email
                 - subject: Email subject line
                 - body: Full email content
+                - id: Optional email ID
 
     Returns:
-        tuple[str, str, str, str]: Tuple containing:
+        tuple[str, str, str, str, str]: Tuple containing:
             - author: Sender's name and email
             - to: Recipient's name and email
             - subject: Email subject line
             - email_thread: Full email content
+            - email_id: Email ID (or None if not available)
     """
     # Detect schema based on keys present in the input
     if "author" in email_input and "email_thread" in email_input:
@@ -106,6 +119,7 @@ def parse_email(email_input: dict) -> tuple[str, str, str, str]:
             email_input["to"],
             email_input["subject"],
             email_input["email_thread"],
+            email_input.get("id", None),
         )
     elif "from_email" in email_input and "page_content" in email_input:
         # Gmail schema
@@ -114,6 +128,7 @@ def parse_email(email_input: dict) -> tuple[str, str, str, str]:
             email_input["to_email"],
             email_input["subject"],
             email_input["page_content"],
+            email_input.get("id", None),
         )
     elif "from" in email_input and "body" in email_input:
         # Direct API schema
@@ -122,6 +137,7 @@ def parse_email(email_input: dict) -> tuple[str, str, str, str]:
             email_input["to"],
             email_input["subject"],
             email_input["body"],
+            email_input.get("id", None),
         )
     else:
         # Unknown schema, try to handle gracefully by looking for equivalent fields
@@ -144,7 +160,8 @@ def parse_email(email_input: dict) -> tuple[str, str, str, str]:
             email_input.get("content") or 
             "No content available"
         )
-        return (author, to, subject, content)
+        email_id = email_input.get("id", None)
+        return (author, to, subject, content, email_id)
 
 def extract_message_content(message) -> str:
     """Extract content from different message types as clean string.
