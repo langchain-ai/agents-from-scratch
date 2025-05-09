@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Workshop for Interrupt Conference"
 requires-python = ">=3.8"
 dependencies = [
+    "langchain>=0.3.9",
     "langchain-core>=0.3.59",
     "langchain-openai",
     "langgraph>=0.4.2",
