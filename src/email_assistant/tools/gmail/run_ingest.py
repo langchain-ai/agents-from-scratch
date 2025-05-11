@@ -17,6 +17,8 @@ from datetime import datetime
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from langgraph_sdk import get_client
+import os
+from dotenv import load_dotenv
 
 # Setup nest_asyncio for asyncio support
 try:
@@ -30,6 +32,9 @@ except ImportError:
 _ROOT = Path(__file__).parent.absolute()
 _SECRETS_DIR = _ROOT / ".secrets"
 TOKEN_PATH = _SECRETS_DIR / "token.json"
+
+# Load environment variables
+load_dotenv()
 
 def extract_message_part(payload):
     """Extract content from a message part."""
@@ -52,26 +57,19 @@ def extract_message_part(payload):
     return ""
 
 def load_gmail_credentials():
-    """Load Gmail credentials from token.json"""
-    if not TOKEN_PATH.exists():
-        print(f"Error: Token file not found at {TOKEN_PATH}")
-        return None
-        
+    """Load Gmail credentials from environment variables"""
     try:
-        with open(TOKEN_PATH, "r") as f:
-            token_data = json.load(f)
-            
         credentials = Credentials(
-            token=token_data.get("token"),
-            refresh_token=token_data.get("refresh_token"),
-            token_uri=token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
-            client_id=token_data.get("client_id"),
-            client_secret=token_data.get("client_secret"),
-            scopes=token_data.get("scopes", ["https://www.googleapis.com/auth/gmail.modify"])
+            token=os.getenv("GOOGLE_ACCESS_TOKEN"),
+            refresh_token=os.getenv("GOOGLE_REFRESH_TOKEN"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv("GOOGLE_CLIENT_ID"),
+            client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+            scopes=["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/calendar"]
         )
         return credentials
     except Exception as e:
-        print(f"Error loading credentials: {str(e)}")
+        print(f"Error loading credentials from environment variables: {str(e)}")
         return None
 
 def extract_email_data(message):
