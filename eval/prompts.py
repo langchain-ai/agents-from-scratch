@@ -31,11 +31,11 @@ Your job is to evaluate the agent's reasoning and decision relative to the corre
 """
 
 # Used in /tests/test_email_assistant.py
-RESPONSE_CRITERIA_SYSTEM_PROMPT = """You are evaluating an email assistant that works on behalf of a user, Lance Martin.
+RESPONSE_CRITERIA_SYSTEM_PROMPT = """You are evaluating an email assistant that works on behalf of a user, David Xu.
 
-You will see a sequence of messages, starting with an email sent to Lance Martin <lance@company.com>. 
+You will see a sequence of messages, starting with an email sent to David Xu <david.interrupt.demo@gmail.com>. 
 
-You will then see the assistant's response to this email on behalf of Lance Martin, which includes any tool calls made (e.g., write_email, schedule_meeting, check_calendar_availability, done).
+You will then see the assistant's response to this email on behalf of David Xu, which includes any tool calls made (e.g., write_email, schedule_meeting, check_calendar_availability, done).
 
 You will also see a list of criteria that the assistant's response must meet.
 

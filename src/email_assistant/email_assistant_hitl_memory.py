@@ -9,7 +9,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt, Command
 
 from src.email_assistant.tools import get_tools, get_tools_by_name
-from src.email_assistant.tools.default.prompt_templates import HITL_MEMORY_TOOLS_PROMPT
+from src.email_assistant.tools.gmail.prompt_templates import GMAIL_TOOLS_PROMPT
 from src.email_assistant.prompts import triage_system_prompt, triage_user_prompt, agent_system_prompt_hitl_memory, default_triage_instructions, default_background, default_response_preferences, default_cal_preferences
 from src.email_assistant.schemas import State, RouterSchema, StateInput
 from src.email_assistant.utils import parse_email, format_for_display, format_email_markdown
@@ -18,11 +18,11 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 # Get tools
-tools = get_tools(["write_email", "schedule_meeting", "check_calendar_availability", "Question", "Done"])
+tools = get_tools(["send_email_tool", "schedule_meeting_tool", "check_calendar_tool", "Question", "Done"], include_gmail=True)
 tools_by_name = get_tools_by_name(tools)
 
 # Initialize the LLM for use with router / structured output
-llm = init_chat_model("openai:gpt-4.1", temperature=0.0)
+llm = init_chat_model("openai:gpt-4o-mini", temperature=0.0)
 llm_router = llm.with_structured_output(RouterSchema) 
 
 # Initialize the LLM, enforcing tool use (of any available tools) for agent
@@ -161,13 +161,13 @@ def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_int
     """
     
     # Parse the email input
-    author, to, subject, email_thread = parse_email(state["email_input"])
+    author, to, subject, email_thread, email_id = parse_email(state["email_input"])
     user_prompt = triage_user_prompt.format(
         author=author, to=to, subject=subject, email_thread=email_thread
     )
 
     # Create email markdown for Agent Inbox in case of notification  
-    email_markdown = format_email_markdown(subject, author, to, email_thread)
+    email_markdown = format_email_markdown(subject, author, to, email_thread, email_id)
 
     # Search for existing triage_preferences memory
     triage_instructions = get_memory(store, ("email_assistant", "triage_preferences"), default_triage_instructions)
@@ -231,10 +231,10 @@ def triage_interrupt_handler(state: State, store: BaseStore) -> Command[Literal[
     """Handles interrupts from the triage step"""
     
     # Parse the email input
-    author, to, subject, email_thread = parse_email(state["email_input"])
+    author, to, subject, email_thread, email_id = parse_email(state["email_input"])
 
     # Create email markdown for Agent Inbox in case of notification  
-    email_markdown = format_email_markdown(subject, author, to, email_thread)
+    email_markdown = format_email_markdown(subject, author, to, email_thread, email_id)
 
     # Create messages
     messages = [{"role": "user",
@@ -310,7 +310,7 @@ def llm_call(state: State, store: BaseStore):
             llm_with_tools.invoke(
                 [
                     {"role": "system", "content": agent_system_prompt_hitl_memory.format(
-                        tools_prompt=HITL_MEMORY_TOOLS_PROMPT,
+                        tools_prompt=GMAIL_TOOLS_PROMPT,
                         background=default_background,
                         response_preferences=response_preferences, 
                         cal_preferences=cal_preferences
@@ -334,7 +334,7 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
     for tool_call in state["messages"][-1].tool_calls:
         
         # Allowed tools for HITL
-        hitl_tools = ["write_email", "schedule_meeting", "Question"]
+        hitl_tools = ["send_email_tool", "schedule_meeting_tool", "Question"]
         
         # If tool is not in our HITL list, execute it directly without interruption
         if tool_call["name"] not in hitl_tools:
@@ -347,22 +347,22 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
             
         # Get original email from email_input in state
         email_input = state["email_input"]
-        author, to, subject, email_thread = parse_email(email_input)
-        original_email_markdown = format_email_markdown(subject, author, to, email_thread)
+        author, to, subject, email_thread, email_id = parse_email(email_input)
+        original_email_markdown = format_email_markdown(subject, author, to, email_thread, email_id)
         
         # Format tool call for display and prepend the original email
         tool_display = format_for_display(state, tool_call)
         description = original_email_markdown + tool_display
 
         # Configure what actions are allowed in Agent Inbox
-        if tool_call["name"] == "write_email":
+        if tool_call["name"] == "send_email_tool":
             config = {
                 "allow_ignore": True,
                 "allow_respond": True,
                 "allow_edit": True,
                 "allow_accept": True,
             }
-        elif tool_call["name"] == "schedule_meeting":
+        elif tool_call["name"] == "schedule_meeting_tool":
             config = {
                 "allow_ignore": True,
                 "allow_respond": True,
@@ -424,7 +424,7 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
             result.append(ai_message.model_copy(update={"tool_calls": updated_tool_calls}))
 
             # Save feedback in memory and update the write_email tool call with the edited content from Agent Inbox
-            if tool_call["name"] == "write_email":
+            if tool_call["name"] == "send_email_tool":
                 
                 # Execute the tool with edited args
                 observation = tool.invoke(edited_args)
@@ -439,7 +439,7 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
                 }])
             
             # Save feedback in memory and update the schedule_meeting tool call with the edited content from Agent Inbox
-            elif tool_call["name"] == "schedule_meeting":
+            elif tool_call["name"] == "schedule_meeting_tool":
                 
                 # Execute the tool with edited args
                 observation = tool.invoke(edited_args)
@@ -459,7 +459,7 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
 
         elif response["type"] == "ignore":
 
-            if tool_call["name"] == "write_email":
+            if tool_call["name"] == "send_email_tool":
                 # Don't execute the tool, and tell the agent how to proceed
                 result.append({"role": "tool", "content": "User ignored this email draft. Ignore this email and end the workflow.", "tool_call_id": tool_call["id"]})
                 # Go to END
@@ -470,7 +470,7 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
                     "content": f"The user ignored the email draft. That means they did not want to respond to the email. Update the triage preferences to ensure emails of this type are not classified as respond. Follow all instructions above, and remember: {MEMORY_UPDATE_INSTRUCTIONS_REINFORCEMENT}."
                 }])
 
-            elif tool_call["name"] == "schedule_meeting":
+            elif tool_call["name"] == "schedule_meeting_tool":
                 # Don't execute the tool, and tell the agent how to proceed
                 result.append({"role": "tool", "content": "User ignored this calendar meeting draft. Ignore this email and end the workflow.", "tool_call_id": tool_call["id"]})
                 # Go to END
@@ -498,7 +498,7 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
         elif response["type"] == "response":
             # User provided feedback
             user_feedback = response["args"]
-            if tool_call["name"] == "write_email":
+            if tool_call["name"] == "send_email_tool":
                 # Don't execute the tool, and add a message with the user feedback to incorporate into the email
                 result.append({"role": "tool", "content": f"User gave feedback, which can we incorporate into the email. Feedback: {user_feedback}", "tool_call_id": tool_call["id"]})
                 # This is new: update the memory
@@ -507,7 +507,7 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
                     "content": f"User gave feedback, which we can use to update the response preferences. Follow all instructions above, and remember: {MEMORY_UPDATE_INSTRUCTIONS_REINFORCEMENT}."
                 }])
 
-            elif tool_call["name"] == "schedule_meeting":
+            elif tool_call["name"] == "schedule_meeting_tool":
                 # Don't execute the tool, and add a message with the user feedback to incorporate into the email
                 result.append({"role": "tool", "content": f"User gave feedback, which can we incorporate into the meeting request. Feedback: {user_feedback}", "tool_call_id": tool_call["id"]})
                 # This is new: update the memory

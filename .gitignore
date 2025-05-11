@@ -29,6 +29,7 @@ wheels/
 !tests/*.ipynb
 
 # Virtual Environment
+.venv
 venv/
 env/
 ENV/
@@ -57,3 +58,6 @@ htmlcov/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# LangGraph
+.langgraph_api
