@@ -8,11 +8,11 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt, Command
 
-from src.email_assistant.tools import get_tools, get_tools_by_name
-from src.email_assistant.tools.default.prompt_templates import HITL_MEMORY_TOOLS_PROMPT
-from src.email_assistant.prompts import triage_system_prompt, triage_user_prompt, agent_system_prompt_hitl_memory, default_triage_instructions, default_background, default_response_preferences, default_cal_preferences
-from src.email_assistant.schemas import State, RouterSchema, StateInput
-from src.email_assistant.utils import parse_email, format_for_display, format_email_markdown
+from email_assistant.tools import get_tools, get_tools_by_name
+from email_assistant.tools.default.prompt_templates import HITL_MEMORY_TOOLS_PROMPT
+from email_assistant.prompts import triage_system_prompt, triage_user_prompt, agent_system_prompt_hitl_memory, default_triage_instructions, default_background, default_response_preferences, default_cal_preferences
+from email_assistant.schemas import State, RouterSchema, StateInput
+from email_assistant.utils import parse_email, format_for_display, format_email_markdown
 from dotenv import load_dotenv
 
 load_dotenv(".env")

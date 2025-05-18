@@ -12,8 +12,8 @@ def get_tools(tool_names: List[str] = None, include_gmail: bool = False) -> List
         List of tool objects
     """
     # Import default tools
-    from src.email_assistant.tools.default.email_tools import write_email, Done, Question
-    from src.email_assistant.tools.default.calendar_tools import schedule_meeting, check_calendar_availability
+    from email_assistant.tools.default.email_tools import write_email, Done, Question
+    from email_assistant.tools.default.calendar_tools import schedule_meeting, check_calendar_availability
     
     # Base tools dictionary
     all_tools = {
@@ -27,7 +27,7 @@ def get_tools(tool_names: List[str] = None, include_gmail: bool = False) -> List
     # Add Gmail tools if requested
     if include_gmail:
         try:
-            from src.email_assistant.tools.gmail.gmail_tools import (
+            from email_assistant.tools.gmail.gmail_tools import (
                 fetch_emails_tool,
                 send_email_tool,
                 check_calendar_tool,
