@@ -14,7 +14,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore
 from langgraph.types import Command
 
-from src.email_assistant.utils import extract_tool_calls, format_messages_string
+from email_assistant.utils import extract_tool_calls, format_messages_string
 from eval.prompts import RESPONSE_CRITERIA_SYSTEM_PROMPT
 
 from dotenv import load_dotenv
@@ -47,10 +47,10 @@ def set_agent_module(agent_module_name):
     print(f"Using agent module: {AGENT_MODULE}")
     
     # Force reload the module to ensure we get the latest code
-    if f"src.email_assistant.{AGENT_MODULE}" in sys.modules:
-        importlib.reload(sys.modules[f"src.email_assistant.{AGENT_MODULE}"])
+    if f"email_assistant.{AGENT_MODULE}" in sys.modules:
+        importlib.reload(sys.modules[f"email_assistant.{AGENT_MODULE}"])
     
-    agent_module = importlib.import_module(f"src.email_assistant.{AGENT_MODULE}")
+    agent_module = importlib.import_module(f"email_assistant.{AGENT_MODULE}")
     return AGENT_MODULE
 
 def setup_assistant() -> Tuple[Any, Dict[str, Any], InMemoryStore]:

@@ -44,16 +44,18 @@ export LANGSMITH_TRACING=true
 export OPENAI_API_KEY=your_openai_api_key
 ```
 
-### Create a virtual environment and activate it
+### Create a virtual environment and install dependencies
 
 ```shell
 $ python3 -m venv .venv
 $ source .venv/bin/activate
-# Ensure you have a recent version of pip (required for editable installs with pyproject.toml)
-$ python3 -m pip install --upgrade pip
-# Install the package in editable mode
-$ pip install -e .
+# Install uv for reproducible environments
+$ pip install uv
+# Install the project and dev dependencies using the lockfile
+$ uv sync --extra dev
 ```
+
+This installs the project in editable mode (distribution package name `interrupt_workshop`, import package name `email_assistant`), so you can import `email_assistant` anywhere once the virtual environment is activated.
 
 ## Structure 
 
