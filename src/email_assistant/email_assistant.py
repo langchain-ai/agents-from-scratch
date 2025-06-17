@@ -128,26 +128,26 @@ def triage_router(state: State) -> Command[Literal["response_agent", "__end__"]]
         goto = "response_agent"
         # Add the email to the messages
         update = {
-            "classification_decision": result.classification,
+            "classification_decision": classification,
             "messages": [{"role": "user",
                             "content": f"Respond to the email: {email_markdown}"
                         }],
         }
-    elif result.classification == "ignore":
+    elif classification == "ignore":
         print("🚫 Classification: IGNORE - This email can be safely ignored")
         update =  {
-            "classification_decision": result.classification,
+            "classification_decision": classification,
         }
         goto = END
-    elif result.classification == "notify":
+    elif classification == "notify":
         # If real life, this would do something else
         print("🔔 Classification: NOTIFY - This email contains important information")
         update = {
-            "classification_decision": result.classification,
+            "classification_decision": classification,
         }
         goto = END
     else:
-        raise ValueError(f"Invalid classification: {result.classification}")
+        raise ValueError(f"Invalid classification: {classification}")
     return Command(goto=goto, update=update)
 
 # Build workflow
