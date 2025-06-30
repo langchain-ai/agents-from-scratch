@@ -166,7 +166,7 @@ async def ingest_email_to_langgraph(email_data, graph_name, url="http://127.0.0.
             
             # Delete all previous runs to avoid state accumulation
             for run_info in runs:
-                run_id = run_info.id
+                run_id = run_info["run_id"]
                 print(f"Deleting previous run {run_id} from thread {thread_id}")
                 try:
                     await client.runs.delete(thread_id, run_id)
