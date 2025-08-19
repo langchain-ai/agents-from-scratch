@@ -6,7 +6,8 @@ requires-python = ">=3.11"
 dependencies = [
     "langchain>=0.3.9",
     "langchain-core>=0.3.59",
-    "langchain-openai",
+    "langchain-openai>=0.3.30",
+    "openai>=1.100.1",
     "langgraph>=0.4.2",
     "langsmith[pytest]>=0.3.4",
     "pandas",
