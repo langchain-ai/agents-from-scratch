@@ -1,3 +1,7 @@
+import sys 
+project_root = "/Users/aidan.kelly/nesta/discovery/agentic_prototype/agents-from-scratch/src"
+sys.path.insert(0, project_root) 
+
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
@@ -20,11 +24,11 @@ load_dotenv(".env")
 tools = get_tools(["send_email_tool", "schedule_meeting_tool", "check_calendar_tool", "Question", "Done"], include_gmail=True)
 tools_by_name = get_tools_by_name(tools)
 
-# Initialize the LLM for use with router / structured output
+# Initialise the LLM for use with router / structured output
 llm = init_chat_model("openai:gpt-4.1", temperature=0.0)
 llm_router = llm.with_structured_output(RouterSchema) 
 
-# Initialize the LLM, enforcing tool use (of any available tools) for agent
+# Initialise the LLM, enforcing tool use (of any available tools) for agent
 llm = init_chat_model("openai:gpt-4.1", temperature=0.0)
 llm_with_tools = llm.bind_tools(tools, tool_choice="required")
 
@@ -87,12 +91,20 @@ def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_int
     """
     
     # Parse the email input
-    author, to, subject, email_thread, email_id = parse_gmail(state["email_input"])
+    author, to, subject, email_thread, email_id, pdf_attachments = parse_gmail(state["email_input"])
+
+    # Build user prompt with PDF attachments if present
+    pdf_context = ""
+    if pdf_attachments:
+        pdf_context = "\n\nPDF Attachments:\n"
+        for pdf in pdf_attachments:
+            pdf_context += f"\n--- {pdf['filename']} ---\n{pdf['content']}\n"
+
     user_prompt = triage_user_prompt.format(
-        author=author, to=to, subject=subject, email_thread=email_thread
+        author=author, to=to, subject=subject, email_thread=email_thread + pdf_context
     )
 
-    # Create email markdown for Agent Inbox in case of notification  
+    # Create email markdown for Agent Inbox (WITHOUT PDF content for display)
     email_markdown = format_gmail_markdown(subject, author, to, email_thread, email_id)
 
     # Search for existing triage_preferences memory
@@ -120,11 +132,15 @@ def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_int
         print("📧 Classification: RESPOND - This email requires a response")
         # Next node
         goto = "response_agent"
-        # Update the state
+
+        # Create email markdown with PDF context for LLM
+        email_markdown_with_pdfs = format_gmail_markdown(subject, author, to, email_thread + pdf_context, email_id)
+
+        # Update the state (with PDF context for LLM)
         update = {
             "classification_decision": result.classification,
             "messages": [{"role": "user",
-                            "content": f"Respond to the email: {email_markdown}"
+                            "content": f"Respond to the email: {email_markdown_with_pdfs}"
                         }],
         }
         
@@ -155,16 +171,26 @@ def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_int
 
 def triage_interrupt_handler(state: State, store: BaseStore) -> Command[Literal["response_agent", "__end__"]]:
     """Handles interrupts from the triage step"""
-    
-    # Parse the email input
-    author, to, subject, email_thread, email_id = parse_gmail(state["email_input"])
 
-    # Create email markdown for Agent Inbox in case of notification  
+    # Parse the email input
+    author, to, subject, email_thread, email_id, pdf_attachments = parse_gmail(state["email_input"])
+
+    # Build PDF context if present
+    pdf_context = ""
+    if pdf_attachments:
+        pdf_context = "\n\nPDF Attachments:\n"
+        for pdf in pdf_attachments:
+            pdf_context += f"\n--- {pdf['filename']} ---\n{pdf['content']}\n"
+
+    # Create email markdown for Agent Inbox (WITHOUT PDF content for display)
     email_markdown = format_gmail_markdown(subject, author, to, email_thread, email_id)
 
-    # Create messages
+    # Create email markdown with PDF context for LLM
+    email_markdown_with_pdfs = format_gmail_markdown(subject, author, to, email_thread + pdf_context, email_id)
+
+    # Create messages (with PDF context for LLM)
     messages = [{"role": "user",
-                "content": f"Email to notify user about: {email_markdown}"
+                "content": f"Email to notify user about: {email_markdown_with_pdfs}"
                 }]
 
     # Create interrupt for Agent Inbox
@@ -273,7 +299,8 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
             
         # Get original email from email_input in state
         email_input = state["email_input"]
-        author, to, subject, email_thread, email_id = parse_gmail(email_input)
+        author, to, subject, email_thread, email_id, pdf_attachments = parse_gmail(email_input)
+        # For display in Agent Inbox, we don't include PDF content (keeps UI clean)
         original_email_markdown = format_gmail_markdown(subject, author, to, email_thread, email_id)
         
         # Format tool call for display and prepend the original email
@@ -471,7 +498,7 @@ def should_continue(state: State, store: BaseStore) -> Literal["interrupt_handle
 
 def mark_as_read_node(state: State):
     email_input = state["email_input"]
-    author, to, subject, email_thread, email_id = parse_gmail(email_input)
+    author, to, subject, email_thread, email_id, pdf_attachments = parse_gmail(email_input)
     mark_as_read(email_id)
 
 # Build workflow
