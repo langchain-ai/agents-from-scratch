@@ -129,10 +129,10 @@ def parse_email(email_input: dict) -> dict:
         email_input["email_thread"],
     )
 
-def parse_gmail(email_input: dict) -> tuple[str, str, str, str, str]:
-    """Parse an email input dictionary for Gmail, including the email ID.
-    
-    This function extends parse_email by also returning the email ID,
+def parse_gmail(email_input: dict) -> tuple[str, str, str, str, str, list]:
+    """Parse an email input dictionary for Gmail, including the email ID and PDF attachments.
+
+    This function extends parse_email by also returning the email ID and PDF attachments,
     which is used specifically in the Gmail integration.
 
     Args:
@@ -143,14 +143,16 @@ def parse_gmail(email_input: dict) -> tuple[str, str, str, str, str]:
                 - Subject: Email subject line
                 - Body: Full email content
                 - Id: Gmail message ID
-            
+                - pdf_attachments: List of PDF attachments (optional)
+
     Returns:
-        tuple[str, str, str, str, str]: Tuple containing:
+        tuple[str, str, str, str, str, list]: Tuple containing:
             - author: Sender's name and email
             - to: Recipient's name and email
             - subject: Email subject line
             - email_thread: Full email content
             - email_id: Email ID (or None if not available)
+            - pdf_attachments: List of PDF attachments with filename and content (empty list if none)
     """
 
     print("!Email_input from Gmail!")
@@ -163,6 +165,7 @@ def parse_gmail(email_input: dict) -> tuple[str, str, str, str, str]:
         email_input["subject"],
         email_input["body"],
         email_input["id"],
+        email_input.get("pdf_attachments", []),
     )
     
 def extract_message_content(message) -> str:

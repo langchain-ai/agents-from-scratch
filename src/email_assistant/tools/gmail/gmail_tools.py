@@ -34,6 +34,8 @@ try:
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request
+    import pdfplumber
+    import io 
     
     # Setup logging
     logging.basicConfig(level=logging.INFO)
@@ -59,6 +61,53 @@ try:
             return "\n".join(text_parts)
             
         return ""
+    def iter_parts(payload):
+        """Yield every MIME part in a Gmail message (depth‑first).
+
+        The Gmail message/part `payload` may contain nested `parts` lists (multipart/*).
+        This flattens that hierarchy so callers can scan all parts (e.g. to
+        locate attachments like application/pdf or choose a text/plain body).
+
+        Args:
+            payload (dict|None): Root message or part dict (may have 'parts').
+
+        Yields:
+            dict: Each part including the root, then all descendants.
+        """
+        if not payload:
+            return
+        yield payload
+        for child in payload.get("parts") or []:
+            yield from iter_parts(child)
+
+    def extract_pdf_text(service, message_id, part):
+        """Download + extract text from a PDF attachment using pdfplumber."""
+        if pdfplumber is None:
+            return ""
+        att_id = part.get("body", {}).get("attachmentId")
+        if not att_id:
+            return ""
+        att = (service.users()
+                    .messages()
+                    .attachments()
+                    .get(userId="me", messageId=message_id, id=att_id)
+                    .execute())
+        data = att.get("data")
+        if not data:
+            return ""
+        pdf_bytes = base64.urlsafe_b64decode(data)
+        try:
+            text_pages = []
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                for page in pdf.pages:
+                    try:
+                        text_pages.append(page.extract_text() or "")
+                    except Exception:
+                        text_pages.append("")
+            return "\n\n".join(t for t in text_pages if t).strip()
+        except Exception as e:
+            logger.warning(f"pdfplumber extraction failed: {e}")
+            return ""
     
     # Function to get credentials from token.json or environment variables
     def get_credentials(gmail_token=None, gmail_secret=None):
@@ -143,6 +192,7 @@ try:
 except ImportError:
     # If Gmail API libraries aren't available, set flag to use mock implementation
     GMAIL_API_AVAILABLE = False
+    pdfplumber = None
     logger = logging.getLogger(__name__)
 
 # Helper function that is used by the tool and can be imported elsewhere
@@ -407,13 +457,24 @@ def fetch_group_emails(
                     
                     # Extract email body content
                     body = extract_message_part(process_payload)
-                    
+
+                    pdf_attachments = []
+                    for part in iter_parts(process_payload):
+                        if part.get("mimeType") == "application/pdf":
+                            content = extract_pdf_text(service, process_message["id"], part)
+                            if content:
+                                filename = part.get("filename") or "attachment.pdf"
+                                for h in part.get("headers", []) or []:
+                                    if h.get("name", "").lower() in {"content-disposition", "content-type"} and "filename=" in h.get("value",""):
+                                        filename = h["value"].split("filename=")[-1].strip().strip('"')
+                                pdf_attachments.append({"filename": filename, "content": content})
                     # Yield the processed email data
                     yield {
                         "from_email": from_email,
                         "to_email": _to_email,
                         "subject": subject,
                         "page_content": body,
+                        "pdf_attachments": pdf_attachments,  # NEW
                         "id": process_message["id"],
                         "thread_id": process_message["threadId"],
                         "send_time": parsed_time.isoformat(),

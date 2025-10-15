@@ -149,7 +149,7 @@ When handling emails, follow these steps:
 
 # Default background information 
 default_background = """ 
-I'm Lance, a software engineer at LangChain.
+I'm Aidan, a heat pump installer at Bosch.
 """
 
 # Default response preferences 
@@ -209,6 +209,7 @@ Emails that are worth responding to:
 - Technical questions about documentation, code, or APIs (especially questions about missing endpoints or features)
 - Personal reminders related to family (wife / daughter)
 - Personal reminder related to self-care (doctor appointments, etc)
+If `pdf_attachments` exist, skim them only enough to decide triage category and mention if an attachment appears to contain key actionable info (e.g., contract, invoice, calendar details).
 """
 
 MEMORY_UPDATE_INSTRUCTIONS = """

@@ -19,6 +19,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from langgraph_sdk import get_client
 from dotenv import load_dotenv
+from email_assistant.tools.gmail.gmail_tools import iter_parts, extract_pdf_text
 
 load_dotenv()
 
@@ -26,6 +27,9 @@ load_dotenv()
 _ROOT = Path(__file__).parent.absolute()
 _SECRETS_DIR = _ROOT / ".secrets"
 TOKEN_PATH = _SECRETS_DIR / "token.json"
+# Configurable limits (top of file or near extract_email_data)
+MAX_PDF_PAGES = 10          # if your extract_pdf_text didn’t already cap
+MAX_PDF_CHARS = 4000        # truncate very long extracted text
 
 def extract_message_part(payload):
     """Extract content from a message part."""
@@ -112,7 +116,7 @@ def load_gmail_credentials():
         print(f"Error creating credentials object: {str(e)}")
         return None
 
-def extract_email_data(message):
+def extract_email_data(message, service=None):
     """Extract key information from a Gmail message."""
     headers = message['payload']['headers']
     
@@ -124,6 +128,19 @@ def extract_email_data(message):
     
     # Extract message content
     content = extract_message_part(message['payload'])
+    # Additionally, extract text from any PDF attachments
+    pdf_attachments = []
+    if service:
+        for part in iter_parts(message['payload']):
+            if part.get('mimeType') == "application/pdf":
+                text = extract_pdf_text(service, message['id'], part)
+                if len(text) > MAX_PDF_CHARS:
+                    text = text[:MAX_PDF_CHARS] + "\n...[truncated]..."
+                filename = part.get('filename')
+                for h in part.get("headers", []):
+                    if h.get("name","").lower() in {"content-disposition","content-type"} and "filename=" in h.get("value",""):
+                            filename = h["value"].split("filename=")[-1].strip().strip('"')
+                pdf_attachments.append({"filename": filename, "content": text})
     
     # Create email data object
     email_data = {
@@ -131,6 +148,7 @@ def extract_email_data(message):
         "to_email": to_email,
         "subject": subject,
         "page_content": content,
+        "pdf_attachments": pdf_attachments, #NEW
         "id": message['id'],
         "thread_id": message['threadId'],
         "send_time": date
@@ -166,10 +184,11 @@ async def ingest_email_to_langgraph(email_data, graph_name, url="http://127.0.0.
         try:
             # List all runs for this thread
             runs = await client.runs.list(thread_id)
-            
+
             # Delete all previous runs to avoid state accumulation
             for run_info in runs:
-                run_id = run_info.id
+                # Handle both dict and object responses from SDK
+                run_id = run_info.get('run_id') if isinstance(run_info, dict) else run_info.run_id
                 print(f"Deleting previous run {run_id} from thread {thread_id}")
                 try:
                     await client.runs.delete(thread_id, run_id)
@@ -192,6 +211,7 @@ async def ingest_email_to_langgraph(email_data, graph_name, url="http://127.0.0.
             "to": email_data["to_email"],
             "subject": email_data["subject"],
             "body": email_data["page_content"],
+            "pdf_attachments": email_data["pdf_attachments"], #NEW
             "id": email_data["id"]
         }},
         multitask_strategy="rollback",
@@ -261,7 +281,7 @@ async def fetch_and_process_emails(args):
             message = service.users().messages().get(userId="me", id=message_info["id"]).execute()
             
             # Extract email data
-            email_data = extract_email_data(message)
+            email_data = extract_email_data(message, service=service)
             
             print(f"\nProcessing email {i+1}/{len(messages)}:")
             print(f"From: {email_data['from_email']}")
