@@ -28,8 +28,7 @@ _ROOT = Path(__file__).parent.absolute()
 _SECRETS_DIR = _ROOT / ".secrets"
 TOKEN_PATH = _SECRETS_DIR / "token.json"
 # Configurable limits (top of file or near extract_email_data)
-MAX_PDF_PAGES = 10          # if your extract_pdf_text didn’t already cap
-MAX_PDF_CHARS = 4000        # truncate very long extracted text
+MAX_PDF_CHARS = 25000        # truncate very long extracted text
 
 def extract_message_part(payload):
     """Extract content from a message part."""

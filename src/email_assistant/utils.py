@@ -1,6 +1,9 @@
 from typing import List, Any
 import json
 import html2text
+from langchain.chat_models import init_chat_model
+from email_assistant.prompts import PDF_SUMMARISER_PROMPT
+from email_assistant.schemas import PDFSummary
 
 def format_email_markdown(subject, author, to, email_thread, email_id=None):
     """Format email details into a nicely formatted markdown string for display
@@ -27,7 +30,7 @@ def format_email_markdown(subject, author, to, email_thread, email_id=None):
 
 def format_gmail_markdown(subject, author, to, email_thread, email_id=None):
     """Format Gmail email details into a nicely formatted markdown string for display,
-    with HTML to text conversion for HTML content
+    with HTML to text conversion for HTML content.
     
     Args:
         subject: Email subject
@@ -35,7 +38,7 @@ def format_gmail_markdown(subject, author, to, email_thread, email_id=None):
         to: Email recipient
         email_thread: Email content (possibly HTML)
         email_id: Optional email ID (for Gmail API)
-    """
+    """  # noqa: D205
     id_section = f"\n**ID**: {email_id}" if email_id else ""
     
     # Check if email_thread is HTML content and convert to text if needed
@@ -154,7 +157,6 @@ def parse_gmail(email_input: dict) -> tuple[str, str, str, str, str, list]:
             - email_id: Email ID (or None if not available)
             - pdf_attachments: List of PDF attachments with filename and content (empty list if none)
     """
-
     print("!Email_input from Gmail!")
     print(email_input)
 
@@ -267,3 +269,51 @@ def show_graph(graph, xray=False):
         nest_asyncio.apply()
         from langchain_core.runnables.graph import MermaidDrawMethod
         return Image(graph.get_graph().draw_mermaid_png(draw_method=MermaidDrawMethod.PYPPETEER))
+    
+def summarise_pdf(text:str, filename: str, char_limit: int = 10000) -> PDFSummary:
+    """Summarise PDF text using an LLM into key points, actions, deadlines.
+    
+    Args:
+        text: The full text content of the PDF
+        filename: The name of the PDF file
+        char_limit: Character limit for the LLM input (default 10,000)
+        
+    Returns:
+        PDFSummary: The summary of the PDF content
+    """
+    # Check to see if file is readable
+    if not text:
+        return PDFSummary(
+            filename=filename,
+            original_length=0,
+            key_points=[],
+            actions=[],
+            deadlines=[],
+            unreadable_flag=True
+        )
+
+    # Truncate text to char limit
+    truncated_text = text[:char_limit]
+    
+    # Initialise chat model
+    llm = init_chat_model("openai:gpt-4.1", temperature=0.0)
+    
+    # Create prompt
+    prompt = PDF_SUMMARISER_PROMPT.format(filename=filename, pdf_text=truncated_text)
+    
+    # get raw content from LLM after prompting
+    raw = llm.invoke([{"role": "user", "content": prompt}]).content
+    print("raw prompt for summarisation of PDF")
+    print(raw)
+    
+    # load in the json file that was provided by the LLM
+    data = json.loads(raw)
+
+    return PDFSummary(
+        filename=filename,
+        original_length=len(text),
+        key_points=data.get("key_points", []),
+        actions=data.get("actions", []),
+        deadlines=data.get("deadlines", []),
+        unreadable_flag=bool(data.get("unreadable_flag", False)),
+    )

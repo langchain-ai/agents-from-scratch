@@ -282,3 +282,25 @@ Remember:
 - Format the profile consistently with the original style
 - Generate the profile as a string
 """
+
+PDF_SUMMARISER_PROMPT = """
+You summarize PDF attachments for email triage.
+
+Return ONLY JSON:
+{{
+  "key_points": [],
+  "actions": [],
+  "deadlines": [],
+  "unreadable_flag": false
+}} 
+
+Definitions:
+- key_points: up to 5 short factual bullets.
+- actions: tasks the user is expected to do (empty if none).
+- deadlines: explicit dates or time-bound phrases (empty if none).
+If content is unreadable or not useful, set unreadable_flag=true and leave other lists empty.
+
+PDF filename: {filename}
+Truncated content (<=10k chars):
+\"\"\"{pdf_text}\"\"\"
+"""

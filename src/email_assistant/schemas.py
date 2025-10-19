@@ -36,3 +36,11 @@ class UserPreferences(BaseModel):
     """Updated user preferences based on user's feedback."""
     chain_of_thought: str = Field(description="Reasoning about which user preferences need to add/update if required")
     user_preferences: str = Field(description="Updated user preferences")
+
+class PDFSummary(BaseModel):
+    filename: str
+    original_length: int
+    key_points: list[str]
+    actions: list[str]
+    deadlines: list[str]
+    unreadable_flag: bool = False

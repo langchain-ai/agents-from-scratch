@@ -14,9 +14,10 @@ from email_assistant.tools import get_tools, get_tools_by_name
 from email_assistant.tools.gmail.prompt_templates import GMAIL_TOOLS_PROMPT
 from email_assistant.tools.gmail.gmail_tools import mark_as_read
 from email_assistant.prompts import triage_system_prompt, triage_user_prompt, agent_system_prompt_hitl_memory, default_triage_instructions, default_background, default_response_preferences, default_cal_preferences, MEMORY_UPDATE_INSTRUCTIONS, MEMORY_UPDATE_INSTRUCTIONS_REINFORCEMENT
-from email_assistant.schemas import State, RouterSchema, StateInput, UserPreferences
-from email_assistant.utils import parse_gmail, format_for_display, format_gmail_markdown
+from email_assistant.schemas import State, RouterSchema, StateInput, UserPreferences, PDFSummary
+from email_assistant.utils import parse_gmail, format_for_display, format_gmail_markdown, summarise_pdf
 from dotenv import load_dotenv
+
 
 load_dotenv(".env")
 
@@ -95,10 +96,26 @@ def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_int
 
     # Build user prompt with PDF attachments if present
     pdf_context = ""
+    summary_lines = []
     if pdf_attachments:
-        pdf_context = "\n\nPDF Attachments:\n"
         for pdf in pdf_attachments:
-            pdf_context += f"\n--- {pdf['filename']} ---\n{pdf['content']}\n"
+            #pdf_context += f"\n--- {pdf['filename']} ---\n{pdf['content']}\n"
+            summary_obj = summarise_pdf(pdf["content"], pdf["filename"])
+            pdf["summary"]=summary_obj.model_dump()
+            pdf.pop("content", None)  # Remove full content to save memory
+            # Add things to summary line
+            if summary_obj.unreadable_flag:
+                summary_lines.append(f"{summary_obj.filename}: UNREADABLE")
+            else:
+                summary_lines.append(
+                    f"{summary_obj.filename} | Key: {', '.join(summary_obj.key_points) or 'None'} | "
+                    f"Actions: {', '.join(summary_obj.actions) or 'None'} | "
+                    f"Deadlines: {', '.join(summary_obj.deadlines) or 'None'}"
+                )
+    if summary_lines:
+        pdf_context = "\n\nPDF Attachment Summaries:\n" + "\n".join(f"- {l}" for l in summary_lines)
+
+
 
     user_prompt = triage_user_prompt.format(
         author=author, to=to, subject=subject, email_thread=email_thread + pdf_context
