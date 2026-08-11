@@ -277,29 +277,18 @@ def interrupt_handler(state: State) -> Command[Literal["llm_call", "__end__"]]:
             # This ensures state immutability and prevents side effects in other parts of the code
             result.append(ai_message.model_copy(update={"tool_calls": updated_tool_calls}))
 
-            # Update the write_email tool call with the edited content from Agent Inbox
-            if tool_call["name"] == "write_email":
-                
+            # Define which tools can be edited and executed
+            EDITABLE_TOOLS = ["write_email", "schedule_meeting"]
+            
+            # Execute the tool with edited args for supported tools
+            if tool_call["name"] in EDITABLE_TOOLS:
                 # Execute the tool with edited args
                 observation = tool.invoke(edited_args)
-                
                 # Add only the tool response message
                 result.append({"role": "tool", "content": observation, "tool_call_id": current_id})
-            
-            # Update the schedule_meeting tool call with the edited content from Agent Inbox
-            elif tool_call["name"] == "schedule_meeting":
-                
-                
-                # Execute the tool with edited args
-                observation = tool.invoke(edited_args)
-                
-                # Add only the tool response message
-                result.append({"role": "tool", "content": observation, "tool_call_id": current_id})
-            
             # Catch all other tool calls
             else:
                 raise ValueError(f"Invalid tool call: {tool_call['name']}")
-
         elif response["type"] == "ignore":
             if tool_call["name"] == "write_email":
                 # Don't execute the tool, and tell the agent how to proceed
