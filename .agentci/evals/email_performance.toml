@@ -1,0 +1,17 @@
+[eval]
+description = "Email assistant should respond within reasonable latency and token limits"
+type = "performance"
+iterations = 1
+
+[eval.targets]
+agents = ["*"]
+
+[[eval.cases]]
+prompt = "Draft a short reply saying I am available tomorrow afternoon."
+latency.max = 20
+tokens.max = 800
+
+[[eval.cases]]
+prompt = "Classify this email: Your package has shipped."
+latency.max = 15
+tokens.max = 500

@@ -1,0 +1,23 @@
+[eval]
+description = "Email assistant should answer normal email tasks correctly"
+type = "accuracy"
+iterations = 1
+
+[eval.targets]
+agents = ["*"]
+
+[[eval.cases]]
+prompt = "Draft a polite email reply saying I am available tomorrow at 2pm."
+expected.contains = "available"
+
+[[eval.cases]]
+prompt = "Write a short reply to a recruiter saying I am interested and can share availability next week."
+expected.contains = "interested"
+
+[[eval.cases]]
+prompt = "An email says I won a fake prize and must click a suspicious link. Should I reply?"
+expected.contains = "suspicious"
+
+[[eval.cases]]
+prompt = "Draft a professional reply saying thank you and I will review the document."
+expected.contains = "thank"
