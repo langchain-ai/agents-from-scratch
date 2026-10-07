@@ -29,6 +29,7 @@ try:
     import logging
     from googleapiclient.discovery import build
     from email.mime.text import MIMEText
+    from email.header import Header
     from datetime import timedelta
     from dateutil.parser import parse as parse_time
     from google.oauth2.credentials import Credentials
@@ -556,18 +557,34 @@ def send_email(
             logger.warning(f"Could not retrieve original message with ID {email_id}. Error: {str(e)}")
             # If we can't get the original message, create a new message with minimal info
             subject = "Response"
-            original_from = "recipient@example.com"  # Will be overridden by user input
+            if addn_receipients and len(addn_receipients) > 0:
+                original_from = addn_receipients[0]
+                addn_receipients = addn_receipients[1:]
+            else:
+                original_from = "recipient@example.com"
             thread_id = None
             
         # Create a message object
-        msg = MIMEText(response_text)
-        msg["to"] = original_from
+        msg = MIMEText(response_text, "plain", "utf-8")
+        name, addr = email.utils.parseaddr(original_from)
+        if name:
+            msg["to"] = email.utils.formataddr((Header(name, "utf-8").encode(), addr))
+        else:
+            msg["to"] = addr
+
         msg["from"] = email_address
-        msg["subject"] = subject
+        msg["subject"] = Header(subject, "utf-8")
         
         # Add additional recipients if specified
         if addn_receipients:
-            msg["cc"] = ", ".join(addn_receipients)
+            formatted_ccs = []
+            for r in addn_receipients:
+                r_name, r_addr = email.utils.parseaddr(r)
+                if r_name:
+                    formatted_ccs.append(email.utils.formataddr((Header(r_name, "utf-8").encode(), r_addr)))
+                else:
+                    formatted_ccs.append(r_addr)
+            msg["cc"] = ", ".join(formatted_ccs)
             
         # Encode the message
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
@@ -880,11 +897,14 @@ def send_calendar_invite(
             "reminders": {
                 "useDefault": True,
             },
-            "sendUpdates": "all",  # Send email notifications to attendees
         }
         
         # Create the event
-        event = service.events().insert(calendarId="primary", body=event).execute()
+        event = service.events().insert(
+            calendarId="primary", 
+            body=event,
+            sendUpdates="none"  # Do not send email notifications to attendees
+        ).execute()
         
         logger.info(f"Meeting created: {event.get('htmlLink')}")
         return True
@@ -903,7 +923,7 @@ def schedule_meeting_tool(
     timezone: str = "America/Los_Angeles"
 ) -> str:
     """
-    Schedule a meeting with Google Calendar and send invites.
+    Schedule a meeting on Google Calendar without sending email invites (follow up with send_email_tool to notify attendees).
     
     Args:
         attendees: Email addresses of meeting attendees
