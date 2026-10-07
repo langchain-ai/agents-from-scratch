@@ -77,7 +77,7 @@ def update_memory(store, namespace, messages):
     store.put(namespace, "user_preferences", result.user_preferences)
 
 # Nodes 
-def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_interrupt_handler", "response_agent", "__end__"]]:
+def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_interrupt_handler", "response_agent", "mark_as_read_node"]]:
     """Analyze email content to decide if we should respond, notify, or ignore.
 
     The triage step prevents the assistant from wasting time on:
@@ -132,7 +132,7 @@ def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_int
         print("🚫 Classification: IGNORE - This email can be safely ignored")
 
         # Next node
-        goto = END
+        goto = "mark_as_read_node"
         # Update the state
         update = {
             "classification_decision": classification,
@@ -153,7 +153,7 @@ def triage_router(state: State, store: BaseStore) -> Command[Literal["triage_int
     
     return Command(goto=goto, update=update)
 
-def triage_interrupt_handler(state: State, store: BaseStore) -> Command[Literal["response_agent", "__end__"]]:
+def triage_interrupt_handler(state: State, store: BaseStore) -> Command[Literal["response_agent", "mark_as_read_node"]]:
     """Handles interrupts from the triage step"""
     
     # Parse the email input
@@ -209,7 +209,7 @@ def triage_interrupt_handler(state: State, store: BaseStore) -> Command[Literal[
                         })
         # Update memory with feedback 
         update_memory(store, ("email_assistant", "triage_preferences"), messages)
-        goto = END
+        goto = "mark_as_read_node"
 
     # Catch all other responses
     else:
@@ -247,7 +247,7 @@ def llm_call(state: State, store: BaseStore):
         ]
     }
     
-def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_call", "__end__"]]:
+def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_call", "mark_as_read_node"]]:
     """Creates an interrupt for human review of tool calls"""
     
     # Store messages
@@ -388,8 +388,8 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
             if tool_call["name"] == "send_email_tool":
                 # Don't execute the tool, and tell the agent how to proceed
                 result.append({"role": "tool", "content": "User ignored this email draft. Ignore this email and end the workflow.", "tool_call_id": tool_call["id"]})
-                # Go to END
-                goto = END
+                # Go to mark_as_read_node
+                goto = "mark_as_read_node"
                 # This is new: update the memory
                 update_memory(store, ("email_assistant", "triage_preferences"), state["messages"] + result + [{
                     "role": "user",
@@ -399,8 +399,8 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
             elif tool_call["name"] == "schedule_meeting_tool":
                 # Don't execute the tool, and tell the agent how to proceed
                 result.append({"role": "tool", "content": "User ignored this calendar meeting draft. Ignore this email and end the workflow.", "tool_call_id": tool_call["id"]})
-                # Go to END
-                goto = END
+                # Go to mark_as_read_node
+                goto = "mark_as_read_node"
                 # This is new: update the memory
                 update_memory(store, ("email_assistant", "triage_preferences"), state["messages"] + result + [{
                     "role": "user",
@@ -410,8 +410,8 @@ def interrupt_handler(state: State, store: BaseStore) -> Command[Literal["llm_ca
             elif tool_call["name"] == "Question":
                 # Don't execute the tool, and tell the agent how to proceed
                 result.append({"role": "tool", "content": "User ignored this question. Ignore this email and end the workflow.", "tool_call_id": tool_call["id"]})
-                # Go to END
-                goto = END
+                # Go to mark_as_read_node
+                goto = "mark_as_read_node"
                 # This is new: update the memory
                 update_memory(store, ("email_assistant", "triage_preferences"), state["messages"] + result + [{
                     "role": "user",
