@@ -67,6 +67,7 @@ def should_continue(state: State) -> Literal["Action", "__end__"]:
                 return END
             else:
                 return "Action"
+    return END
 
 # Build workflow
 agent_builder = StateGraph(State)
