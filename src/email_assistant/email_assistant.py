@@ -1,6 +1,7 @@
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
+from langchain_core.tools import ToolException
 
 from email_assistant.tools import get_tools, get_tools_by_name
 from email_assistant.tools.default.prompt_templates import AGENT_TOOLS_PROMPT
@@ -52,7 +53,12 @@ def tool_node(state: State):
     result = []
     for tool_call in state["messages"][-1].tool_calls:
         tool = tools_by_name[tool_call["name"]]
-        observation = tool.invoke(tool_call["args"])
+        try:
+            observation = tool.invoke(tool_call["args"])
+        except (TimeoutError, ConnectionError, ToolException) as e:
+            # Expected tool failures go back to the model so it can retry or explain.
+            # Anything else (a bug in a tool) still raises.
+            observation = f"Error: {type(e).__name__}: {e}"
         result.append({"role": "tool", "content" : observation, "tool_call_id": tool_call["id"]})
     return {"messages": result}
 
